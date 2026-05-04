@@ -1,9 +1,11 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
 using System.Text;
 
-namespace Lab2Variant1;
+namespace Lab3Variant1;
 
 public interface IDateAndCopy
 {
@@ -18,7 +20,7 @@ public enum Education
     SecondEducation
 }
 
-public class Person : IDateAndCopy
+public class Person : IDateAndCopy, IComparable, IComparer<Person>
 {
     protected string _firstName;
     protected string _lastName;
@@ -32,10 +34,8 @@ public class Person : IDateAndCopy
     }
 
     public Person()
+        : this("Ім'яЗаЗамовчуванням", "ПрізвищеЗаЗамовчуванням", new DateTime(2000, 1, 1))
     {
-        _firstName = "Ім'яЗаЗамовчуванням";
-        _lastName = "ПрізвищеЗаЗамовчуванням";
-        _birthDate = new DateTime(2000, 1, 1);
     }
 
     public string FirstName
@@ -68,6 +68,41 @@ public class Person : IDateAndCopy
         init => _birthDate = value;
     }
 
+    public int CompareTo(object? obj)
+    {
+        if (obj is null)
+        {
+            return 1;
+        }
+
+        if (obj is not Person other)
+        {
+            throw new ArgumentException("Об'єкт повинен мати тип Person.", nameof(obj));
+        }
+
+        return string.Compare(_lastName, other._lastName, StringComparison.Ordinal);
+    }
+
+    public int Compare(Person? x, Person? y)
+    {
+        if (ReferenceEquals(x, y))
+        {
+            return 0;
+        }
+
+        if (x is null)
+        {
+            return -1;
+        }
+
+        if (y is null)
+        {
+            return 1;
+        }
+
+        return DateTime.Compare(x.BirthDate, y.BirthDate);
+    }
+
     public override string ToString()
     {
         return $"Ім'я: {_firstName}, Прізвище: {_lastName}, Дата народження: {_birthDate:dd.MM.yyyy}";
@@ -80,10 +115,11 @@ public class Person : IDateAndCopy
 
     public override bool Equals(object? obj)
     {
-        if (obj is null || obj.GetType() != GetType())
+        if (obj is not Person other)
+        {
             return false;
+        }
 
-        Person other = (Person)obj;
         return _firstName == other._firstName
                && _lastName == other._lastName
                && _birthDate == other._birthDate;
@@ -92,10 +128,14 @@ public class Person : IDateAndCopy
     public static bool operator ==(Person? left, Person? right)
     {
         if (ReferenceEquals(left, right))
+        {
             return true;
+        }
 
         if (left is null || right is null)
+        {
             return false;
+        }
 
         return left.Equals(right);
     }
@@ -118,10 +158,6 @@ public class Person : IDateAndCopy
 
 public class Exam : IDateAndCopy
 {
-    public string Subject { get; set; }
-    public int Grade { get; set; }
-    public DateTime ExamDate { get; set; }
-
     public Exam(string subject, int grade, DateTime examDate)
     {
         Subject = subject;
@@ -130,11 +166,15 @@ public class Exam : IDateAndCopy
     }
 
     public Exam()
+        : this("ПредметЗаЗамовчуванням", 0, DateTime.Today)
     {
-        Subject = "ПредметЗаЗамовчуванням";
-        Grade = 0;
-        ExamDate = DateTime.Today;
     }
+
+    public string Subject { get; set; }
+
+    public int Grade { get; set; }
+
+    public DateTime ExamDate { get; set; }
 
     public DateTime Date
     {
@@ -149,22 +189,25 @@ public class Exam : IDateAndCopy
 
     public override bool Equals(object? obj)
     {
-        if (obj is null || obj.GetType() != GetType())
+        if (obj is not Exam other)
+        {
             return false;
+        }
 
-        Exam other = (Exam)obj;
-        return Subject == other.Subject
-               && Grade == other.Grade
-               && ExamDate == other.ExamDate;
+        return Subject == other.Subject && Grade == other.Grade && ExamDate == other.ExamDate;
     }
 
     public static bool operator ==(Exam? left, Exam? right)
     {
         if (ReferenceEquals(left, right))
+        {
             return true;
+        }
 
         if (left is null || right is null)
+        {
             return false;
+        }
 
         return left.Equals(right);
     }
@@ -187,9 +230,6 @@ public class Exam : IDateAndCopy
 
 public class Test : IDateAndCopy
 {
-    public string Subject { get; set; }
-    public bool IsPassed { get; set; }
-
     public Test(string subject, bool isPassed)
     {
         Subject = subject;
@@ -197,10 +237,13 @@ public class Test : IDateAndCopy
     }
 
     public Test()
+        : this("ПредметЗаЗамовчуванням", false)
     {
-        Subject = "ПредметЗаЗамовчуванням";
-        IsPassed = false;
     }
+
+    public string Subject { get; set; }
+
+    public bool IsPassed { get; set; }
 
     public DateTime Date { get; init; } = DateTime.Today;
 
@@ -211,20 +254,25 @@ public class Test : IDateAndCopy
 
     public override bool Equals(object? obj)
     {
-        if (obj is null || obj.GetType() != GetType())
+        if (obj is not Test other)
+        {
             return false;
+        }
 
-        Test other = (Test)obj;
         return Subject == other.Subject && IsPassed == other.IsPassed;
     }
 
     public static bool operator ==(Test? left, Test? right)
     {
         if (ReferenceEquals(left, right))
+        {
             return true;
+        }
 
         if (left is null || right is null)
+        {
             return false;
+        }
 
         return left.Equals(right);
     }
@@ -245,28 +293,25 @@ public class Test : IDateAndCopy
     }
 }
 
-public class Student : Person, IDateAndCopy, IEnumerable
+public class Student : Person, IEnumerable<string>
 {
     private Education _education;
     private int _groupNumber;
-    private ArrayList _tests;
-    private ArrayList _exams;
+    private List<Test> _tests;
+    private List<Exam> _exams;
 
     public Student(Person person, Education education, int groupNumber)
         : base(person.FirstName, person.LastName, person.BirthDate)
     {
         _education = education;
         GroupNumber = groupNumber;
-        _tests = new ArrayList();
-        _exams = new ArrayList();
+        _tests = new List<Test>();
+        _exams = new List<Exam>();
     }
 
-    public Student() : base()
+    public Student()
+        : this(new Person(), Education.Bachelor, 101)
     {
-        _education = Education.Bachelor;
-        _groupNumber = 101;
-        _tests = new ArrayList();
-        _exams = new ArrayList();
     }
 
     public Person PersonData
@@ -279,6 +324,8 @@ public class Student : Person, IDateAndCopy, IEnumerable
             _birthDate = value.BirthDate;
         }
     }
+
+    public Person PersonKey => new(_firstName, _lastName, _birthDate);
 
     public Education EducationForm
     {
@@ -303,34 +350,19 @@ public class Student : Person, IDateAndCopy, IEnumerable
         }
     }
 
-    public ArrayList Tests
+    public List<Test> Tests
     {
         get => _tests;
-        init => _tests = value ?? new ArrayList();
+        init => _tests = value ?? new List<Test>();
     }
 
-    public ArrayList Exams
+    public List<Exam> Exams
     {
         get => _exams;
-        init => _exams = value ?? new ArrayList();
+        init => _exams = value ?? new List<Exam>();
     }
 
-    public double AverageGrade
-    {
-        get
-        {
-            if (_exams.Count == 0)
-                return 0;
-
-            double sum = 0;
-            foreach (Exam exam in _exams)
-            {
-                sum += exam.Grade;
-            }
-
-            return sum / _exams.Count;
-        }
-    }
+    public double AverageGrade => _exams.Count == 0 ? 0 : _exams.Average(exam => exam.Grade);
 
     public override DateTime Date
     {
@@ -340,44 +372,41 @@ public class Student : Person, IDateAndCopy, IEnumerable
 
     public void AddExams(params Exam[] exams)
     {
-        if (exams == null)
-            return;
-
-        foreach (var exam in exams)
+        if (exams is null)
         {
-            _exams.Add(exam);
+            return;
         }
+
+        _exams.AddRange(exams);
     }
 
     public void AddTests(params Test[] tests)
     {
-        if (tests == null)
-            return;
-
-        foreach (var test in tests)
+        if (tests is null)
         {
-            _tests.Add(test);
+            return;
         }
+
+        _tests.AddRange(tests);
     }
 
     public override string ToString()
     {
         var sb = new StringBuilder();
 
-        sb.AppendLine("=== Student ===");
         sb.AppendLine(base.ToString());
         sb.AppendLine($"Форма навчання: {_education}");
         sb.AppendLine($"Номер групи: {_groupNumber}");
         sb.AppendLine($"Середній бал: {AverageGrade:F2}");
-
         sb.AppendLine("Заліки:");
+
         if (_tests.Count == 0)
         {
             sb.AppendLine("  Немає заліків");
         }
         else
         {
-            foreach (Test test in _tests)
+            foreach (var test in _tests)
             {
                 sb.AppendLine($"  {test}");
             }
@@ -390,58 +419,45 @@ public class Student : Person, IDateAndCopy, IEnumerable
         }
         else
         {
-            foreach (Exam exam in _exams)
+            foreach (var exam in _exams)
             {
                 sb.AppendLine($"  {exam}");
             }
         }
 
-        return sb.ToString();
+        return sb.ToString().TrimEnd();
     }
 
     public override string ToShortString()
     {
-        return $"{base.ToString()}, Форма навчання: {_education}, Номер групи: {_groupNumber}, Середній бал: {AverageGrade:F2}";
+        return $"{base.ToString()}, Форма навчання: {_education}, Номер групи: {_groupNumber}, Середній бал: {AverageGrade:F2}, К-сть заліків: {_tests.Count}, К-сть іспитів: {_exams.Count}";
     }
 
     public override bool Equals(object? obj)
     {
-        if (obj is null || obj.GetType() != GetType())
-            return false;
-
-        Student other = (Student)obj;
-
-        if (!base.Equals(other))
-            return false;
-
-        if (_education != other._education || _groupNumber != other._groupNumber)
-            return false;
-
-        if (_tests.Count != other._tests.Count || _exams.Count != other._exams.Count)
-            return false;
-
-        for (int i = 0; i < _tests.Count; i++)
+        if (obj is not Student other)
         {
-            if (!_tests[i]!.Equals(other._tests[i]))
-                return false;
+            return false;
         }
 
-        for (int i = 0; i < _exams.Count; i++)
-        {
-            if (!_exams[i]!.Equals(other._exams[i]))
-                return false;
-        }
-
-        return true;
+        return base.Equals(other)
+               && _education == other._education
+               && _groupNumber == other._groupNumber
+               && _tests.SequenceEqual(other._tests)
+               && _exams.SequenceEqual(other._exams);
     }
 
     public static bool operator ==(Student? left, Student? right)
     {
         if (ReferenceEquals(left, right))
+        {
             return true;
+        }
 
         if (left is null || right is null)
+        {
             return false;
+        }
 
         return left.Equals(right);
     }
@@ -453,16 +469,16 @@ public class Student : Person, IDateAndCopy, IEnumerable
 
     public override int GetHashCode()
     {
-        int hash = HashCode.Combine(base.GetHashCode(), _education, _groupNumber);
+        var hash = HashCode.Combine(base.GetHashCode(), _education, _groupNumber);
 
-        foreach (Test test in _tests)
+        foreach (var test in _tests)
         {
-            hash = HashCode.Combine(hash, test.GetHashCode());
+            hash = HashCode.Combine(hash, test);
         }
 
-        foreach (Exam exam in _exams)
+        foreach (var exam in _exams)
         {
-            hash = HashCode.Combine(hash, exam.GetHashCode());
+            hash = HashCode.Combine(hash, exam);
         }
 
         return hash;
@@ -470,128 +486,301 @@ public class Student : Person, IDateAndCopy, IEnumerable
 
     public override object DeepCopy()
     {
-        var copy = new Student(
-            new Person(_firstName, _lastName, _birthDate),
-            _education,
-            _groupNumber
-        );
-
-        foreach (Test test in _tests)
-        {
-            copy._tests.Add(test.DeepCopy());
-        }
-
-        foreach (Exam exam in _exams)
-        {
-            copy._exams.Add(exam.DeepCopy());
-        }
-
+        var copy = new Student(new Person(_firstName, _lastName, _birthDate), _education, _groupNumber);
+        copy._tests = _tests.Select(test => (Test)test.DeepCopy()).ToList();
+        copy._exams = _exams.Select(exam => (Exam)exam.DeepCopy()).ToList();
         return copy;
     }
 
-    // Ітератор: об'єднання заліків та іспитів
-    public IEnumerable GetAllExamsAndTests()
+    public IEnumerable<object> GetAllExamsAndTests()
     {
-        foreach (Test test in _tests)
+        foreach (var test in _tests)
+        {
             yield return test;
+        }
 
-        foreach (Exam exam in _exams)
+        foreach (var exam in _exams)
+        {
             yield return exam;
+        }
     }
 
-    // Ітератор з параметром: іспити з оцінкою вище за задану
     public IEnumerable<Exam> GetExamsWithGradeHigherThan(int minGrade)
     {
-        foreach (Exam exam in _exams)
+        foreach (var exam in _exams)
         {
             if (exam.Grade > minGrade)
-                yield return exam;
-        }
-    }
-
-    // Додаткове: всі здані заліки та іспити
-    public IEnumerable GetPassedTestsAndExams()
-    {
-        foreach (Test test in _tests)
-        {
-            if (test.IsPassed)
-                yield return test;
-        }
-
-        foreach (Exam exam in _exams)
-        {
-            if (exam.Grade > 2)
-                yield return exam;
-        }
-    }
-
-    // Додаткове: всі здані заліки, для яких іспит також зданий
-    public IEnumerable<Test> GetPassedTestsWithPassedExams()
-    {
-        foreach (Test test in _tests)
-        {
-            if (!test.IsPassed)
-                continue;
-
-            foreach (Exam exam in _exams)
             {
-                if (exam.Subject == test.Subject && exam.Grade > 2)
-                {
-                    yield return test;
-                    break;
-                }
+                yield return exam;
             }
         }
     }
 
-    // IEnumerable: предмети, які є і в заліках, і в іспитах
-    public IEnumerator GetEnumerator()
+    public IEnumerable<object> GetPassedTestsAndExams()
     {
-        return new StudentEnumerator(_tests, _exams);
+        foreach (var test in _tests.Where(test => test.IsPassed))
+        {
+            yield return test;
+        }
+
+        foreach (var exam in _exams.Where(exam => exam.Grade > 2))
+        {
+            yield return exam;
+        }
+    }
+
+    public IEnumerable<Test> GetPassedTestsWithPassedExams()
+    {
+        foreach (var test in _tests.Where(test => test.IsPassed))
+        {
+            if (_exams.Any(exam => exam.Subject == test.Subject && exam.Grade > 2))
+            {
+                yield return test;
+            }
+        }
+    }
+
+    public IEnumerator<string> GetEnumerator()
+    {
+        return _tests
+            .Select(test => test.Subject)
+            .Intersect(_exams.Select(exam => exam.Subject))
+            .GetEnumerator();
+    }
+
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
     }
 }
 
-public class StudentEnumerator : IEnumerator
+public class StudentAverageGradeComparer : Comparer<Student>
 {
-    private readonly List<string> _intersectionSubjects;
-    private int _position = -1;
-
-    public StudentEnumerator(ArrayList tests, ArrayList exams)
+    public override int Compare(Student? x, Student? y)
     {
-        _intersectionSubjects = new List<string>();
-
-        foreach (Test test in tests)
+        if (ReferenceEquals(x, y))
         {
-            foreach (Exam exam in exams)
-            {
-                if (test.Subject == exam.Subject && !_intersectionSubjects.Contains(test.Subject))
-                {
-                    _intersectionSubjects.Add(test.Subject);
-                }
-            }
+            return 0;
+        }
+
+        if (x is null)
+        {
+            return -1;
+        }
+
+        if (y is null)
+        {
+            return 1;
+        }
+
+        return x.AverageGrade.CompareTo(y.AverageGrade);
+    }
+}
+
+public class StudentCollection
+{
+    private readonly List<Student> _students = new();
+
+    public double MaxAverageGrade => _students.Count == 0 ? 0 : _students.Max(GetAverageGradeSelector);
+
+    public IEnumerable<Student> Masters => _students.Where(IsMasterSelector);
+
+    public void AddDefaults()
+    {
+        AddStudents(
+            CreateStudent(1),
+            CreateStudent(2),
+            CreateStudent(3)
+        );
+    }
+
+    public void AddStudents(params Student[] students)
+    {
+        if (students is null)
+        {
+            return;
+        }
+
+        _students.AddRange(students);
+    }
+
+    public void SortByLastName()
+    {
+        _students.Sort();
+    }
+
+    public void SortByBirthDate()
+    {
+        _students.Sort(new Person());
+    }
+
+    public void SortByAverageGrade()
+    {
+        _students.Sort(new StudentAverageGradeComparer());
+    }
+
+    public List<Student> AverageMarkGroup(double value)
+    {
+        return _students
+            .GroupBy(GetAverageGradeSelector)
+            .Where(group => Math.Abs(group.Key - value) < 0.0001)
+            .SelectMany(group => group)
+            .ToList();
+    }
+
+    public IEnumerable<IGrouping<double, Student>> GetAverageGradeGroups()
+    {
+        return _students.GroupBy(GetAverageGradeSelector).OrderBy(group => group.Key);
+    }
+
+    public override string ToString()
+    {
+        if (_students.Count == 0)
+        {
+            return "Колекція студентів порожня.";
+        }
+
+        return string.Join(
+            $"{Environment.NewLine}{new string('-', 70)}{Environment.NewLine}",
+            _students.Select(student => student.ToString())
+        );
+    }
+
+    public string ToShortString()
+    {
+        if (_students.Count == 0)
+        {
+            return "Колекція студентів порожня.";
+        }
+
+        return string.Join(Environment.NewLine, _students.Select(student => student.ToShortString()));
+    }
+
+    private static double GetAverageGradeSelector(Student student)
+    {
+        return student.AverageGrade;
+    }
+
+    private static bool IsMasterSelector(Student student)
+    {
+        return student.EducationForm == Education.Master;
+    }
+
+    private static Student CreateStudent(int index)
+    {
+        return TestCollections.GenerateElement(index);
+    }
+}
+
+public class TestCollections
+{
+    private readonly List<Person> _persons;
+    private readonly List<string> _personStrings;
+    private readonly Dictionary<Person, Student> _personStudentDictionary;
+    private readonly Dictionary<string, Student> _stringStudentDictionary;
+
+    public TestCollections(int count)
+    {
+        if (count < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count), "Кількість елементів не може бути від'ємною.");
+        }
+
+        _persons = new List<Person>(count);
+        _personStrings = new List<string>(count);
+        _personStudentDictionary = new Dictionary<Person, Student>(count);
+        _stringStudentDictionary = new Dictionary<string, Student>(count);
+
+        for (int i = 0; i < count; i++)
+        {
+            var student = GenerateElement(i);
+            var person = student.PersonKey;
+            var stringKey = person.ToString();
+
+            _persons.Add(person);
+            _personStrings.Add(stringKey);
+            _personStudentDictionary.Add(person, student);
+            _stringStudentDictionary.Add(stringKey, student);
         }
     }
 
-    public object Current
+    public static Student GenerateElement(int index)
     {
-        get
-        {
-            if (_position < 0 || _position >= _intersectionSubjects.Count)
-                throw new InvalidOperationException();
+        var normalizedIndex = Math.Abs(index);
+        var person = new Person(
+            $"Ім'я{index}",
+            $"Прізвище{index}",
+            new DateTime(1995 + normalizedIndex % 20, normalizedIndex % 12 + 1, normalizedIndex % 28 + 1)
+        );
 
-            return _intersectionSubjects[_position];
+        var student = new Student(
+            person,
+            (Education)(normalizedIndex % Enum.GetValues<Education>().Length),
+            101 + normalizedIndex % 598
+        );
+
+        student.AddTests(
+            new Test($"Предмет{index}_1", index % 2 == 0),
+            new Test($"Предмет{index}_2", true)
+        );
+
+        student.AddExams(
+            new Exam($"Предмет{index}_1", normalizedIndex % 5 + 1, new DateTime(2024, normalizedIndex % 12 + 1, normalizedIndex % 28 + 1)),
+            new Exam($"Предмет{index}_2", (normalizedIndex + 2) % 5 + 1, new DateTime(2024, (normalizedIndex + 1) % 12 + 1, (normalizedIndex + 2) % 28 + 1))
+        );
+
+        return student;
+    }
+
+    public void MeasureSearchTimes()
+    {
+        if (_persons.Count == 0)
+        {
+            Console.WriteLine("Колекції порожні. Пошук неможливий.");
+            return;
+        }
+
+        var scenarios = new (string Label, Person Person, string StringKey, Student Student)[]
+        {
+            CreateScenario("першого елемента", 0),
+            CreateScenario("центрального елемента", _persons.Count / 2),
+            CreateScenario("останнього елемента", _persons.Count - 1),
+            CreateMissingScenario()
+        };
+
+        foreach (var scenario in scenarios)
+        {
+            Console.WriteLine($"Пошук для {scenario.Label}:");
+            Console.WriteLine($"  List<Person>.Contains: {Measure(() => _persons.Contains(scenario.Person)):N0} ticks");
+            Console.WriteLine($"  List<string>.Contains: {Measure(() => _personStrings.Contains(scenario.StringKey)):N0} ticks");
+            Console.WriteLine($"  Dictionary<Person, Student>.ContainsKey: {Measure(() => _personStudentDictionary.ContainsKey(scenario.Person)):N0} ticks");
+            Console.WriteLine($"  Dictionary<string, Student>.ContainsKey: {Measure(() => _stringStudentDictionary.ContainsKey(scenario.StringKey)):N0} ticks");
+            Console.WriteLine($"  Dictionary<Person, Student>.ContainsValue: {Measure(() => _personStudentDictionary.ContainsValue(scenario.Student)):N0} ticks");
+            Console.WriteLine();
         }
     }
 
-    public bool MoveNext()
+    private (string Label, Person Person, string StringKey, Student Student) CreateScenario(string label, int index)
     {
-        _position++;
-        return _position < _intersectionSubjects.Count;
+        var person = _persons[index];
+        var stringKey = _personStrings[index];
+        var student = _personStudentDictionary[person];
+        return (label, person, stringKey, student);
     }
 
-    public void Reset()
+    private static (string Label, Person Person, string StringKey, Student Student) CreateMissingScenario()
     {
-        _position = -1;
+        var student = GenerateElement(-1);
+        var person = student.PersonKey;
+        return ("елемента, що не входить в колекцію", person, person.ToString(), student);
+    }
+
+    private static long Measure(Action action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        action();
+        stopwatch.Stop();
+        return stopwatch.ElapsedTicks;
     }
 }
 
@@ -601,110 +790,126 @@ public static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
 
-        // 1. Два об'єкти Person з однаковими даними
-        var person1 = new Person("Роман", "Попов", new DateTime(2006, 8, 23));
-        var person2 = new Person("Роман", "Попов", new DateTime(2006, 8, 23));
-
-        Console.WriteLine("=== Перевірка Person ===");
-        Console.WriteLine($"ReferenceEquals(person1, person2): {ReferenceEquals(person1, person2)}");
-        Console.WriteLine($"person1 == person2: {person1 == person2}");
-        Console.WriteLine($"person1.Equals(person2): {person1.Equals(person2)}");
-        Console.WriteLine($"Hash person1: {person1.GetHashCode()}");
-        Console.WriteLine($"Hash person2: {person2.GetHashCode()}");
-        Console.WriteLine();
-
-        // 2. Об'єкт Student
-        var student = new Student(person1, Education.Master, 321);
-
-        student.AddTests(
-            new Test("Математика", true),
-            new Test("Фізика", true),
-            new Test("Історія", false),
-            new Test("Програмування", true)
+        var studentCollection = new StudentCollection();
+        studentCollection.AddDefaults();
+        studentCollection.AddStudents(
+            CreateCustomStudent(
+                "Олена",
+                "Кравець",
+                new DateTime(2004, 5, 14),
+                Education.Master,
+                321,
+                new[] { new Test("Бази даних", true), new Test("Комп'ютерні мережі", true) },
+                new[]
+                {
+                    new Exam("Бази даних", 5, new DateTime(2025, 1, 17)),
+                    new Exam("Комп'ютерні мережі", 4, new DateTime(2025, 1, 20))
+                }
+            ),
+            CreateCustomStudent(
+                "Іван",
+                "Мельник",
+                new DateTime(2003, 11, 3),
+                Education.Bachelor,
+                215,
+                new[] { new Test("Алгоритми", true), new Test("Дискретна математика", false) },
+                new[]
+                {
+                    new Exam("Алгоритми", 3, new DateTime(2025, 1, 18)),
+                    new Exam("Дискретна математика", 2, new DateTime(2025, 1, 21))
+                }
+            )
         );
 
-        student.AddExams(
-            new Exam("Математика", 5, new DateTime(2025, 6, 10)),
-            new Exam("Фізика", 4, new DateTime(2025, 6, 12)),
-            new Exam("Історія", 2, new DateTime(2025, 6, 15)),
-            new Exam("Програмування", 5, new DateTime(2025, 6, 20))
-        );
-
-        Console.WriteLine("=== Student ===");
-        Console.WriteLine(student);
-
-        // 3. Властивість типу Person
-        Console.WriteLine("=== PersonData ===");
-        Console.WriteLine(student.PersonData);
+        Console.WriteLine("=== Початкова колекція StudentCollection ===");
+        Console.WriteLine(studentCollection);
         Console.WriteLine();
 
-        // 4. DeepCopy
-        Student copiedStudent = (Student)student.DeepCopy();
+        Console.WriteLine("=== Коротке представлення StudentCollection ===");
+        Console.WriteLine(studentCollection.ToShortString());
+        Console.WriteLine();
 
-        student.AddExams(new Exam("Англійська", 3, new DateTime(2025, 6, 25)));
-        student.AddTests(new Test("Англійська", true));
-        student.PersonData = new Person("ЗміненеІмя", "ЗміненеПрізвище", new DateTime(2000, 1, 1));
+        studentCollection.SortByLastName();
+        Console.WriteLine("=== Сортування за прізвищем ===");
+        Console.WriteLine(studentCollection);
+        Console.WriteLine();
 
-        Console.WriteLine("=== Оригінал після змін ===");
-        Console.WriteLine(student);
+        studentCollection.SortByBirthDate();
+        Console.WriteLine("=== Сортування за датою народження ===");
+        Console.WriteLine(studentCollection);
+        Console.WriteLine();
 
-        Console.WriteLine("=== Глибока копія ===");
-        Console.WriteLine(copiedStudent);
+        studentCollection.SortByAverageGrade();
+        Console.WriteLine("=== Сортування за середнім балом ===");
+        Console.WriteLine(studentCollection);
+        Console.WriteLine();
 
-        // 5. try/catch для недопустимого номера групи
-        Console.WriteLine("=== Перевірка виключення ===");
-        try
+        Console.WriteLine($"Максимальний середній бал: {studentCollection.MaxAverageGrade:F2}");
+        Console.WriteLine();
+
+        Console.WriteLine("=== Студенти форми навчання Master ===");
+        foreach (var student in studentCollection.Masters)
         {
-            student = new Student(person1, Education.Bachelor, 50);
-        }
-        catch (ArgumentOutOfRangeException ex)
-        {
-            Console.WriteLine($"Помилка: {ex.Message}");
+            Console.WriteLine(student.ToShortString());
         }
 
         Console.WriteLine();
 
-        // 6. Іспити з оцінкою > 3
-        Console.WriteLine("=== Іспити з оцінкою > 3 ===");
-        foreach (Exam exam in copiedStudent.GetExamsWithGradeHigherThan(3))
+        Console.WriteLine("=== Групування за середнім балом ===");
+        foreach (var group in studentCollection.GetAverageGradeGroups())
         {
-            Console.WriteLine(exam);
+            Console.WriteLine($"Середній бал: {group.Key:F2}");
+            foreach (var student in group)
+            {
+                Console.WriteLine($"  {student.ToShortString()}");
+            }
         }
 
         Console.WriteLine();
-
-        // 7. Предмети, які є і в заліках, і в іспитах
-        Console.WriteLine("=== Предмети, які є і в заліках, і в іспитах ===");
-        foreach (string subject in copiedStudent)
+        Console.WriteLine("=== Пошук студентів із заданим середнім балом ===");
+        var targetAverage = studentCollection.MaxAverageGrade;
+        foreach (var student in studentCollection.AverageMarkGroup(targetAverage))
         {
-            Console.WriteLine(subject);
+            Console.WriteLine(student.ToShortString());
         }
 
         Console.WriteLine();
-
-        // 8. Всі здані заліки та іспити
-        Console.WriteLine("=== Всі здані заліки та іспити ===");
-        foreach (object item in copiedStudent.GetPassedTestsAndExams())
-        {
-            Console.WriteLine(item);
-        }
+        var collectionSize = ReadCollectionSize();
+        var testCollections = new TestCollections(collectionSize);
 
         Console.WriteLine();
+        Console.WriteLine("=== Вимірювання часу пошуку в колекціях ===");
+        testCollections.MeasureSearchTimes();
+    }
 
-        // 9. Здані заліки, для яких іспит також зданий
-        Console.WriteLine("=== Здані заліки, для яких іспит також зданий ===");
-        foreach (Test test in copiedStudent.GetPassedTestsWithPassedExams())
+    private static int ReadCollectionSize()
+    {
+        while (true)
         {
-            Console.WriteLine(test);
-        }
+            Console.Write("Введіть кількість елементів для TestCollections: ");
+            var input = Console.ReadLine();
 
-        Console.WriteLine();
+            if (int.TryParse(input, out var count) && count > 0)
+            {
+                return count;
+            }
 
-        // 10. Об'єднання заліків та іспитів
-        Console.WriteLine("=== Усі заліки та іспити разом ===");
-        foreach (object item in copiedStudent.GetAllExamsAndTests())
-        {
-            Console.WriteLine(item);
+            Console.WriteLine("Помилка введення. Потрібно ввести додатне ціле число.");
         }
+    }
+
+    private static Student CreateCustomStudent(
+        string firstName,
+        string lastName,
+        DateTime birthDate,
+        Education education,
+        int groupNumber,
+        IEnumerable<Test> tests,
+        IEnumerable<Exam> exams)
+    {
+        var student = new Student(new Person(firstName, lastName, birthDate), education, groupNumber);
+        student.AddTests(tests.ToArray());
+        student.AddExams(exams.ToArray());
+        return student;
     }
 }
