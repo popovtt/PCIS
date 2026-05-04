@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
-namespace Lab4Variant1;
+namespace Lab5Variant1;
 
 public interface IDateAndCopy
 {
@@ -600,9 +600,43 @@ public class StudentAverageGradeComparer : Comparer<Student>
     }
 }
 
+public delegate void StudentListHandler(object source, StudentListHandlerEventArgs args);
+
+public class StudentListHandlerEventArgs : EventArgs
+{
+    public StudentListHandlerEventArgs(string collectionName, string changeType, Student student)
+    {
+        CollectionName = collectionName;
+        ChangeType = changeType;
+        Student = student;
+    }
+
+    public string CollectionName { get; init; }
+
+    public string ChangeType { get; init; }
+
+    public Student Student { get; init; }
+
+    public override string ToString()
+    {
+        return $"Колекція: {CollectionName}, Тип зміни: {ChangeType}, Студент: {Student.ToShortString()}";
+    }
+}
+
 public class StudentCollection
 {
     private readonly List<Student> _students = new();
+
+    public StudentCollection(string collectionName)
+    {
+        CollectionName = collectionName;
+    }
+
+    public string CollectionName { get; init; }
+
+    public event StudentListHandler? StudentCountChanged;
+
+    public event StudentListHandler? StudentReferenceChanged;
 
     public double MaxAverageGrade => _students.Count == 0 ? 0 : _students.Max(GetAverageGradeSelector);
 
@@ -624,7 +658,34 @@ public class StudentCollection
             return;
         }
 
-        _students.AddRange(students);
+        foreach (var student in students)
+        {
+            _students.Add(student);
+            OnStudentCountChanged("Додано новий елемент до колекції.", student);
+        }
+    }
+
+    public bool Remove(int j)
+    {
+        if (j < 0 || j >= _students.Count)
+        {
+            return false;
+        }
+
+        var removedStudent = _students[j];
+        _students.RemoveAt(j);
+        OnStudentCountChanged("Видалено елемент з колекції.", removedStudent);
+        return true;
+    }
+
+    public Student this[int index]
+    {
+        get => _students[index];
+        set
+        {
+            _students[index] = value;
+            OnStudentReferenceChanged("Замінено елемент у колекції.", value);
+        }
     }
 
     public void SortByLastName()
@@ -660,10 +721,10 @@ public class StudentCollection
     {
         if (_students.Count == 0)
         {
-            return "Колекція студентів порожня.";
+            return $"{CollectionName}: колекція студентів порожня.";
         }
 
-        return string.Join(
+        return $"{CollectionName}{Environment.NewLine}" + string.Join(
             $"{Environment.NewLine}{new string('-', 70)}{Environment.NewLine}",
             _students.Select(student => student.ToString())
         );
@@ -673,7 +734,7 @@ public class StudentCollection
     {
         if (_students.Count == 0)
         {
-            return "Колекція студентів порожня.";
+            return $"{CollectionName}: колекція студентів порожня.";
         }
 
         return string.Join(Environment.NewLine, _students.Select(student => student.ToShortString()));
@@ -692,6 +753,62 @@ public class StudentCollection
     private static Student CreateStudent(int index)
     {
         return TestDataFactory.GenerateStudent(index);
+    }
+
+    private void OnStudentCountChanged(string changeType, Student student)
+    {
+        StudentCountChanged?.Invoke(this, new StudentListHandlerEventArgs(CollectionName, changeType, student));
+    }
+
+    private void OnStudentReferenceChanged(string changeType, Student student)
+    {
+        StudentReferenceChanged?.Invoke(this, new StudentListHandlerEventArgs(CollectionName, changeType, student));
+    }
+}
+
+public class JournalEntry
+{
+    public JournalEntry(string collectionName, string changeType, string studentData)
+    {
+        CollectionName = collectionName;
+        ChangeType = changeType;
+        StudentData = studentData;
+    }
+
+    public string CollectionName { get; init; }
+
+    public string ChangeType { get; init; }
+
+    public string StudentData { get; init; }
+
+    public override string ToString()
+    {
+        return $"Колекція: {CollectionName}, Тип зміни: {ChangeType}, Дані студента: {StudentData}";
+    }
+}
+
+public class Journal
+{
+    private readonly List<JournalEntry> _entries = new();
+
+    public void OnStudentCountChanged(object source, StudentListHandlerEventArgs args)
+    {
+        _entries.Add(new JournalEntry(args.CollectionName, args.ChangeType, args.Student.ToShortString()));
+    }
+
+    public void OnStudentReferenceChanged(object source, StudentListHandlerEventArgs args)
+    {
+        _entries.Add(new JournalEntry(args.CollectionName, args.ChangeType, args.Student.ToShortString()));
+    }
+
+    public override string ToString()
+    {
+        if (_entries.Count == 0)
+        {
+            return "Журнал порожній.";
+        }
+
+        return string.Join(Environment.NewLine, _entries.Select(entry => entry.ToString()));
     }
 }
 
@@ -1040,9 +1157,22 @@ public static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
 
-        var studentCollection = new StudentCollection();
-        studentCollection.AddDefaults();
-        studentCollection.AddStudents(
+        var firstCollection = new StudentCollection("Перша колекція");
+        var secondCollection = new StudentCollection("Друга колекція");
+
+        var firstJournal = new Journal();
+        var secondJournal = new Journal();
+
+        firstCollection.StudentCountChanged += firstJournal.OnStudentCountChanged;
+        firstCollection.StudentReferenceChanged += firstJournal.OnStudentReferenceChanged;
+
+        firstCollection.StudentCountChanged += secondJournal.OnStudentCountChanged;
+        firstCollection.StudentReferenceChanged += secondJournal.OnStudentReferenceChanged;
+        secondCollection.StudentCountChanged += secondJournal.OnStudentCountChanged;
+        secondCollection.StudentReferenceChanged += secondJournal.OnStudentReferenceChanged;
+
+        firstCollection.AddDefaults();
+        secondCollection.AddStudents(
             CreateCustomStudent(
                 "Олена",
                 "Кравець",
@@ -1071,91 +1201,59 @@ public static class Program
             )
         );
 
-        Console.WriteLine("=== Початкова колекція StudentCollection ===");
-        Console.WriteLine(studentCollection);
+        firstCollection.AddStudents(
+            CreateCustomStudent(
+                "Марія",
+                "Бондар",
+                new DateTime(2002, 9, 9),
+                Education.SecondEducation,
+                410,
+                new[] { new Test("Менеджмент", true) },
+                new[] { new Exam("Менеджмент", 5, new DateTime(2025, 2, 5)) }
+            )
+        );
+
+        secondCollection.AddDefaults();
+
+        firstCollection.Remove(1);
+        secondCollection.Remove(0);
+
+        firstCollection[0] = CreateCustomStudent(
+            "Андрій",
+            "Шевчук",
+            new DateTime(2001, 4, 7),
+            Education.Master,
+            305,
+            new[] { new Test("Архітектура ПЗ", true) },
+            new[] { new Exam("Архітектура ПЗ", 5, new DateTime(2025, 3, 10)) }
+        );
+
+        var replacementStudent = CreateCustomStudent(
+            "Наталія",
+            "Гуменюк",
+            new DateTime(2003, 6, 22),
+            Education.Bachelor,
+            222,
+            new[] { new Test("Операційні системи", true) },
+            new[] { new Exam("Операційні системи", 4, new DateTime(2025, 3, 12)) }
+        );
+        secondCollection[1] = replacementStudent;
+
+        Console.WriteLine("=== Перша колекція студентів ===");
+        Console.WriteLine(firstCollection);
         Console.WriteLine();
 
-        Console.WriteLine("=== Коротке представлення StudentCollection ===");
-        Console.WriteLine(studentCollection.ToShortString());
+        Console.WriteLine("=== Друга колекція студентів ===");
+        Console.WriteLine(secondCollection);
         Console.WriteLine();
 
-        studentCollection.SortByLastName();
-        Console.WriteLine("=== Сортування за прізвищем ===");
-        Console.WriteLine(studentCollection);
+        Console.WriteLine("=== Journal 1 ===");
+        Console.WriteLine(firstJournal);
         Console.WriteLine();
 
-        studentCollection.SortByBirthDate();
-        Console.WriteLine("=== Сортування за датою народження ===");
-        Console.WriteLine(studentCollection);
+        Console.WriteLine("=== Journal 2 ===");
+        Console.WriteLine(secondJournal);
         Console.WriteLine();
-
-        studentCollection.SortByAverageGrade();
-        Console.WriteLine("=== Сортування за середнім балом ===");
-        Console.WriteLine(studentCollection);
-        Console.WriteLine();
-
-        Console.WriteLine($"Максимальний середній бал: {studentCollection.MaxAverageGrade:F2}");
-        Console.WriteLine();
-
-        Console.WriteLine("=== Студенти форми навчання Master ===");
-        foreach (var student in studentCollection.Masters)
-        {
-            Console.WriteLine(student.ToShortString());
-        }
-
-        Console.WriteLine();
-
-        Console.WriteLine("=== Групування за середнім балом ===");
-        foreach (var group in studentCollection.GetAverageGradeGroups())
-        {
-            Console.WriteLine($"Середній бал: {group.Key:F2}");
-            foreach (var student in group)
-            {
-                Console.WriteLine($"  {student.ToShortString()}");
-            }
-        }
-
-        Console.WriteLine();
-        Console.WriteLine("=== Пошук студентів із заданим середнім балом ===");
-        var targetAverage = studentCollection.MaxAverageGrade;
-        foreach (var student in studentCollection.AverageMarkGroup(targetAverage))
-        {
-            Console.WriteLine(student.ToShortString());
-        }
-
-        Console.WriteLine();
-        var collectionSize = ReadCollectionSize();
-
-        var benchmarks = new IBenchmarkCollections[]
-        {
-            new StandardTestCollections(collectionSize),
-            new ImmutableTestCollections(collectionSize),
-            new SortedTestCollections(collectionSize)
-        };
-
-        var measurements = benchmarks
-            .SelectMany(benchmark => benchmark.MeasureSearchTimes())
-            .ToList();
-
-        Console.WriteLine();
-        Console.WriteLine("=== Порівняння часу пошуку Standard vs Immutable vs Sorted ===");
-        BenchmarkPrinter.PrintComparison(measurements);
-    }
-
-    private static int ReadCollectionSize()
-    {
-        while (true)
-        {
-            Console.Write("Введіть кількість елементів для порівняння колекцій: ");
-            var input = Console.ReadLine();
-
-            if (int.TryParse(input, out var count) && count > 0)
-            {
-                return count;
-            }
-
-            Console.WriteLine("Помилка введення. Потрібно ввести додатне ціле число.");
-        }
     }
 
     private static Student CreateCustomStudent(
