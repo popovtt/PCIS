@@ -1,11 +1,12 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
 
-namespace Lab3Variant1;
+namespace Lab4Variant1;
 
 public interface IDateAndCopy
 {
@@ -20,7 +21,7 @@ public enum Education
     SecondEducation
 }
 
-public class Person : IDateAndCopy, IComparable, IComparer<Person>
+public class Person : IDateAndCopy, IComparable, IComparable<Person>, IComparer<Person>
 {
     protected string _firstName;
     protected string _lastName;
@@ -80,7 +81,29 @@ public class Person : IDateAndCopy, IComparable, IComparer<Person>
             throw new ArgumentException("Об'єкт повинен мати тип Person.", nameof(obj));
         }
 
-        return string.Compare(_lastName, other._lastName, StringComparison.Ordinal);
+        return CompareTo(other);
+    }
+
+    public int CompareTo(Person? other)
+    {
+        if (other is null)
+        {
+            return 1;
+        }
+
+        var lastNameComparison = string.Compare(_lastName, other._lastName, StringComparison.Ordinal);
+        if (lastNameComparison != 0)
+        {
+            return lastNameComparison;
+        }
+
+        var firstNameComparison = string.Compare(_firstName, other._firstName, StringComparison.Ordinal);
+        if (firstNameComparison != 0)
+        {
+            return firstNameComparison;
+        }
+
+        return DateTime.Compare(_birthDate, other._birthDate);
     }
 
     public int Compare(Person? x, Person? y)
@@ -668,43 +691,13 @@ public class StudentCollection
 
     private static Student CreateStudent(int index)
     {
-        return TestCollections.GenerateElement(index);
+        return TestDataFactory.GenerateStudent(index);
     }
 }
 
-public class TestCollections
+public static class TestDataFactory
 {
-    private readonly List<Person> _persons;
-    private readonly List<string> _personStrings;
-    private readonly Dictionary<Person, Student> _personStudentDictionary;
-    private readonly Dictionary<string, Student> _stringStudentDictionary;
-
-    public TestCollections(int count)
-    {
-        if (count < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(count), "Кількість елементів не може бути від'ємною.");
-        }
-
-        _persons = new List<Person>(count);
-        _personStrings = new List<string>(count);
-        _personStudentDictionary = new Dictionary<Person, Student>(count);
-        _stringStudentDictionary = new Dictionary<string, Student>(count);
-
-        for (int i = 0; i < count; i++)
-        {
-            var student = GenerateElement(i);
-            var person = student.PersonKey;
-            var stringKey = person.ToString();
-
-            _persons.Add(person);
-            _personStrings.Add(stringKey);
-            _personStudentDictionary.Add(person, student);
-            _stringStudentDictionary.Add(stringKey, student);
-        }
-    }
-
-    public static Student GenerateElement(int index)
+    public static Student GenerateStudent(int index)
     {
         var normalizedIndex = Math.Abs(index);
         var person = new Person(
@@ -731,48 +724,106 @@ public class TestCollections
 
         return student;
     }
+}
 
-    public void MeasureSearchTimes()
+public record SearchScenario(string Label, Person Person, string StringKey, Student Student);
+
+public record SearchMeasurement(
+    string CollectionType,
+    string ScenarioLabel,
+    long PersonLookupTicks,
+    long StringLookupTicks,
+    long PersonDictionaryKeyLookupTicks,
+    long StringDictionaryKeyLookupTicks,
+    long DictionaryValueLookupTicks);
+
+public interface IBenchmarkCollections
+{
+    string CollectionType { get; }
+    IReadOnlyList<SearchMeasurement> MeasureSearchTimes();
+}
+
+public sealed class StandardTestCollections : IBenchmarkCollections
+{
+    private readonly List<Person> _persons;
+    private readonly List<string> _personStrings;
+    private readonly Dictionary<Person, Student> _personStudentDictionary;
+    private readonly Dictionary<string, Student> _stringStudentDictionary;
+
+    public StandardTestCollections(int count)
+    {
+        if (count < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
+        _persons = new List<Person>(count);
+        _personStrings = new List<string>(count);
+        _personStudentDictionary = new Dictionary<Person, Student>(count);
+        _stringStudentDictionary = new Dictionary<string, Student>(count);
+
+        for (int i = 0; i < count; i++)
+        {
+            var student = TestDataFactory.GenerateStudent(i);
+            var person = student.PersonKey;
+            var stringKey = person.ToString();
+
+            _persons.Add(person);
+            _personStrings.Add(stringKey);
+            _personStudentDictionary.Add(person, student);
+            _stringStudentDictionary.Add(stringKey, student);
+        }
+    }
+
+    public string CollectionType => "Standard";
+
+    public IReadOnlyList<SearchMeasurement> MeasureSearchTimes()
     {
         if (_persons.Count == 0)
         {
-            Console.WriteLine("Колекції порожні. Пошук неможливий.");
-            return;
+            return Array.Empty<SearchMeasurement>();
         }
 
-        var scenarios = new (string Label, Person Person, string StringKey, Student Student)[]
-        {
-            CreateScenario("першого елемента", 0),
-            CreateScenario("центрального елемента", _persons.Count / 2),
-            CreateScenario("останнього елемента", _persons.Count - 1),
-            CreateMissingScenario()
-        };
-
-        foreach (var scenario in scenarios)
-        {
-            Console.WriteLine($"Пошук для {scenario.Label}:");
-            Console.WriteLine($"  List<Person>.Contains: {Measure(() => _persons.Contains(scenario.Person)):N0} ticks");
-            Console.WriteLine($"  List<string>.Contains: {Measure(() => _personStrings.Contains(scenario.StringKey)):N0} ticks");
-            Console.WriteLine($"  Dictionary<Person, Student>.ContainsKey: {Measure(() => _personStudentDictionary.ContainsKey(scenario.Person)):N0} ticks");
-            Console.WriteLine($"  Dictionary<string, Student>.ContainsKey: {Measure(() => _stringStudentDictionary.ContainsKey(scenario.StringKey)):N0} ticks");
-            Console.WriteLine($"  Dictionary<Person, Student>.ContainsValue: {Measure(() => _personStudentDictionary.ContainsValue(scenario.Student)):N0} ticks");
-            Console.WriteLine();
-        }
+        return CreateScenarios(_persons, _personStrings, _personStudentDictionary)
+            .Select(scenario => new SearchMeasurement(
+                CollectionType,
+                scenario.Label,
+                Measure(() => _persons.Contains(scenario.Person)),
+                Measure(() => _personStrings.Contains(scenario.StringKey)),
+                Measure(() => _personStudentDictionary.ContainsKey(scenario.Person)),
+                Measure(() => _stringStudentDictionary.ContainsKey(scenario.StringKey)),
+                Measure(() => _personStudentDictionary.Values.Contains(scenario.Student))
+            ))
+            .ToList();
     }
 
-    private (string Label, Person Person, string StringKey, Student Student) CreateScenario(string label, int index)
+    private static IEnumerable<SearchScenario> CreateScenarios(
+        IReadOnlyList<Person> persons,
+        IReadOnlyList<string> personStrings,
+        IReadOnlyDictionary<Person, Student> personStudentDictionary)
     {
-        var person = _persons[index];
-        var stringKey = _personStrings[index];
-        var student = _personStudentDictionary[person];
-        return (label, person, stringKey, student);
+        yield return CreateScenario("першого елемента", 0, persons, personStrings, personStudentDictionary);
+        yield return CreateScenario("центрального елемента", persons.Count / 2, persons, personStrings, personStudentDictionary);
+        yield return CreateScenario("останнього елемента", persons.Count - 1, persons, personStrings, personStudentDictionary);
+        yield return CreateMissingScenario();
     }
 
-    private static (string Label, Person Person, string StringKey, Student Student) CreateMissingScenario()
+    private static SearchScenario CreateScenario(
+        string label,
+        int index,
+        IReadOnlyList<Person> persons,
+        IReadOnlyList<string> personStrings,
+        IReadOnlyDictionary<Person, Student> personStudentDictionary)
     {
-        var student = GenerateElement(-1);
+        var person = persons[index];
+        return new SearchScenario(label, person, personStrings[index], personStudentDictionary[person]);
+    }
+
+    private static SearchScenario CreateMissingScenario()
+    {
+        var student = TestDataFactory.GenerateStudent(-1);
         var person = student.PersonKey;
-        return ("елемента, що не входить в колекцію", person, person.ToString(), student);
+        return new SearchScenario("елемента, що не входить в колекцію", person, person.ToString(), student);
     }
 
     private static long Measure(Action action)
@@ -781,6 +832,205 @@ public class TestCollections
         action();
         stopwatch.Stop();
         return stopwatch.ElapsedTicks;
+    }
+}
+
+public sealed class ImmutableTestCollections : IBenchmarkCollections
+{
+    private readonly ImmutableList<Person> _persons;
+    private readonly ImmutableList<string> _personStrings;
+    private readonly ImmutableDictionary<Person, Student> _personStudentDictionary;
+    private readonly ImmutableDictionary<string, Student> _stringStudentDictionary;
+
+    public ImmutableTestCollections(int count)
+    {
+        if (count < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
+        var personListBuilder = ImmutableList.CreateBuilder<Person>();
+        var stringListBuilder = ImmutableList.CreateBuilder<string>();
+        var personDictionaryBuilder = ImmutableDictionary.CreateBuilder<Person, Student>();
+        var stringDictionaryBuilder = ImmutableDictionary.CreateBuilder<string, Student>();
+
+        for (int i = 0; i < count; i++)
+        {
+            var student = TestDataFactory.GenerateStudent(i);
+            var person = student.PersonKey;
+            var stringKey = person.ToString();
+
+            personListBuilder.Add(person);
+            stringListBuilder.Add(stringKey);
+            personDictionaryBuilder.Add(person, student);
+            stringDictionaryBuilder.Add(stringKey, student);
+        }
+
+        _persons = personListBuilder.ToImmutable();
+        _personStrings = stringListBuilder.ToImmutable();
+        _personStudentDictionary = personDictionaryBuilder.ToImmutable();
+        _stringStudentDictionary = stringDictionaryBuilder.ToImmutable();
+    }
+
+    public string CollectionType => "Immutable";
+
+    public IReadOnlyList<SearchMeasurement> MeasureSearchTimes()
+    {
+        if (_persons.Count == 0)
+        {
+            return Array.Empty<SearchMeasurement>();
+        }
+
+        return CreateScenarios()
+            .Select(scenario => new SearchMeasurement(
+                CollectionType,
+                scenario.Label,
+                Measure(() => _persons.Contains(scenario.Person)),
+                Measure(() => _personStrings.Contains(scenario.StringKey)),
+                Measure(() => _personStudentDictionary.ContainsKey(scenario.Person)),
+                Measure(() => _stringStudentDictionary.ContainsKey(scenario.StringKey)),
+                Measure(() => _personStudentDictionary.Values.Contains(scenario.Student))
+            ))
+            .ToList();
+    }
+
+    private IEnumerable<SearchScenario> CreateScenarios()
+    {
+        yield return CreateScenario("першого елемента", 0);
+        yield return CreateScenario("центрального елемента", _persons.Count / 2);
+        yield return CreateScenario("останнього елемента", _persons.Count - 1);
+        yield return CreateMissingScenario();
+    }
+
+    private SearchScenario CreateScenario(string label, int index)
+    {
+        var person = _persons[index];
+        return new SearchScenario(label, person, _personStrings[index], _personStudentDictionary[person]);
+    }
+
+    private static SearchScenario CreateMissingScenario()
+    {
+        var student = TestDataFactory.GenerateStudent(-1);
+        var person = student.PersonKey;
+        return new SearchScenario("елемента, що не входить в колекцію", person, person.ToString(), student);
+    }
+
+    private static long Measure(Action action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        action();
+        stopwatch.Stop();
+        return stopwatch.ElapsedTicks;
+    }
+}
+
+public sealed class SortedTestCollections : IBenchmarkCollections
+{
+    private readonly SortedList<Person, Person> _persons;
+    private readonly SortedList<string, string> _personStrings;
+    private readonly SortedDictionary<Person, Student> _personStudentDictionary;
+    private readonly SortedDictionary<string, Student> _stringStudentDictionary;
+
+    public SortedTestCollections(int count)
+    {
+        if (count < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
+        _persons = new SortedList<Person, Person>(count);
+        _personStrings = new SortedList<string, string>(count);
+        _personStudentDictionary = new SortedDictionary<Person, Student>();
+        _stringStudentDictionary = new SortedDictionary<string, Student>();
+
+        for (int i = 0; i < count; i++)
+        {
+            var student = TestDataFactory.GenerateStudent(i);
+            var person = student.PersonKey;
+            var stringKey = person.ToString();
+
+            _persons.Add(person, person);
+            _personStrings.Add(stringKey, stringKey);
+            _personStudentDictionary.Add(person, student);
+            _stringStudentDictionary.Add(stringKey, student);
+        }
+    }
+
+    public string CollectionType => "Sorted";
+
+    public IReadOnlyList<SearchMeasurement> MeasureSearchTimes()
+    {
+        if (_persons.Count == 0)
+        {
+            return Array.Empty<SearchMeasurement>();
+        }
+
+        return CreateScenarios()
+            .Select(scenario => new SearchMeasurement(
+                CollectionType,
+                scenario.Label,
+                Measure(() => _persons.ContainsKey(scenario.Person)),
+                Measure(() => _personStrings.ContainsKey(scenario.StringKey)),
+                Measure(() => _personStudentDictionary.ContainsKey(scenario.Person)),
+                Measure(() => _stringStudentDictionary.ContainsKey(scenario.StringKey)),
+                Measure(() => _personStudentDictionary.Values.Contains(scenario.Student))
+            ))
+            .ToList();
+    }
+
+    private IEnumerable<SearchScenario> CreateScenarios()
+    {
+        yield return CreateScenario("першого елемента", 0);
+        yield return CreateScenario("центрального елемента", _persons.Count / 2);
+        yield return CreateScenario("останнього елемента", _persons.Count - 1);
+        yield return CreateMissingScenario();
+    }
+
+    private SearchScenario CreateScenario(string label, int index)
+    {
+        var person = _persons.Keys[index];
+        var stringKey = _personStrings.Keys[index];
+        return new SearchScenario(label, person, stringKey, _personStudentDictionary[person]);
+    }
+
+    private static SearchScenario CreateMissingScenario()
+    {
+        var student = TestDataFactory.GenerateStudent(-1);
+        var person = student.PersonKey;
+        return new SearchScenario("елемента, що не входить в колекцію", person, person.ToString(), student);
+    }
+
+    private static long Measure(Action action)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        action();
+        stopwatch.Stop();
+        return stopwatch.ElapsedTicks;
+    }
+}
+
+public static class BenchmarkPrinter
+{
+    public static void PrintComparison(IEnumerable<SearchMeasurement> measurements)
+    {
+        foreach (var scenarioGroup in measurements.GroupBy(measurement => measurement.ScenarioLabel))
+        {
+            Console.WriteLine($"Сценарій пошуку: {scenarioGroup.Key}");
+            Console.WriteLine("Тип колекції | Пошук Person | Пошук string | Ключ Person | Ключ string | Значення Student");
+
+            foreach (var measurement in scenarioGroup)
+            {
+                Console.WriteLine(
+                    $"{measurement.CollectionType,-13} | " +
+                    $"{measurement.PersonLookupTicks,12:N0} | " +
+                    $"{measurement.StringLookupTicks,12:N0} | " +
+                    $"{measurement.PersonDictionaryKeyLookupTicks,11:N0} | " +
+                    $"{measurement.StringDictionaryKeyLookupTicks,11:N0} | " +
+                    $"{measurement.DictionaryValueLookupTicks,15:N0}");
+            }
+
+            Console.WriteLine();
+        }
     }
 }
 
@@ -875,18 +1125,28 @@ public static class Program
 
         Console.WriteLine();
         var collectionSize = ReadCollectionSize();
-        var testCollections = new TestCollections(collectionSize);
+
+        var benchmarks = new IBenchmarkCollections[]
+        {
+            new StandardTestCollections(collectionSize),
+            new ImmutableTestCollections(collectionSize),
+            new SortedTestCollections(collectionSize)
+        };
+
+        var measurements = benchmarks
+            .SelectMany(benchmark => benchmark.MeasureSearchTimes())
+            .ToList();
 
         Console.WriteLine();
-        Console.WriteLine("=== Вимірювання часу пошуку в колекціях ===");
-        testCollections.MeasureSearchTimes();
+        Console.WriteLine("=== Порівняння часу пошуку Standard vs Immutable vs Sorted ===");
+        BenchmarkPrinter.PrintComparison(measurements);
     }
 
     private static int ReadCollectionSize()
     {
         while (true)
         {
-            Console.Write("Введіть кількість елементів для TestCollections: ");
+            Console.Write("Введіть кількість елементів для порівняння колекцій: ");
             var input = Console.ReadLine();
 
             if (int.TryParse(input, out var count) && count > 0)
