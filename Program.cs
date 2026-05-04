@@ -3,10 +3,13 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
-namespace Lab5Variant1;
+namespace Lab6Variant1;
 
 public interface IDateAndCopy
 {
@@ -320,7 +323,9 @@ public class Student : Person, IEnumerable<string>
 {
     private Education _education;
     private int _groupNumber;
+    [JsonInclude]
     private List<Test> _tests;
+    [JsonInclude]
     private List<Exam> _exams;
 
     public Student(Person person, Education education, int groupNumber)
@@ -507,12 +512,117 @@ public class Student : Person, IEnumerable<string>
         return hash;
     }
 
-    public override object DeepCopy()
+    public override Student DeepCopy()
     {
-        var copy = new Student(new Person(_firstName, _lastName, _birthDate), _education, _groupNumber);
-        copy._tests = _tests.Select(test => (Test)test.DeepCopy()).ToList();
-        copy._exams = _exams.Select(exam => (Exam)exam.DeepCopy()).ToList();
-        return copy;
+        MemoryStream? stream = null;
+
+        try
+        {
+            stream = new MemoryStream();
+            JsonSerializer.Serialize(stream, CreateState(), GetSerializerOptions());
+            stream.Position = 0;
+            var copiedState = JsonSerializer.Deserialize<StudentSerializationData>(stream, GetSerializerOptions());
+            return copiedState is null
+                ? throw new InvalidOperationException("Не вдалося створити копію об'єкта Student.")
+                : CreateFromState(copiedState);
+        }
+        finally
+        {
+            stream?.Dispose();
+        }
+    }
+
+    public bool Save(string filename)
+    {
+        return Save(filename, this);
+    }
+
+    public bool Load(string filename)
+    {
+        return Load(filename, this);
+    }
+
+    public static bool Save(string filename, Student student)
+    {
+        FileStream? fileStream = null;
+
+        try
+        {
+            fileStream = new FileStream(filename, FileMode.Create, FileAccess.Write, FileShare.None);
+            JsonSerializer.Serialize(fileStream, student.CreateState(), GetSerializerOptions());
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            fileStream?.Dispose();
+        }
+    }
+
+    public static bool Load(string filename, Student student)
+    {
+        FileStream? fileStream = null;
+
+        try
+        {
+            fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var loadedState = JsonSerializer.Deserialize<StudentSerializationData>(fileStream, GetSerializerOptions());
+            if (loadedState is null)
+            {
+                return false;
+            }
+
+            student.CopyFrom(CreateFromState(loadedState));
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            fileStream?.Dispose();
+        }
+    }
+
+    public bool AddFromConsole()
+    {
+        Console.WriteLine("Введіть дані іспиту одним рядком у форматі: назва предмету; оцінка; дата іспиту.");
+        Console.WriteLine("Як розділювачі можна використовувати символи ';' ',' '|'.");
+        Console.Write("Ввід: ");
+
+        var input = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            Console.WriteLine("Помилка: порожній рядок введення.");
+            return false;
+        }
+
+        var parts = input
+            .Split(new[] { ';', ',', '|' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+        if (parts.Length != 3)
+        {
+            Console.WriteLine("Помилка: потрібно ввести рівно три значення.");
+            return false;
+        }
+
+        try
+        {
+            var subject = parts[0];
+            var grade = int.Parse(parts[1]);
+            var examDate = DateTime.Parse(parts[2]);
+            _exams.Add(new Exam(subject, grade, examDate));
+            return true;
+        }
+        catch
+        {
+            Console.WriteLine("Помилка: не вдалося розібрати введені дані.");
+            return false;
+        }
     }
 
     public IEnumerable<object> GetAllExamsAndTests()
@@ -574,6 +684,69 @@ public class Student : Person, IEnumerable<string>
     IEnumerator IEnumerable.GetEnumerator()
     {
         return GetEnumerator();
+    }
+
+    private void CopyFrom(Student source)
+    {
+        _firstName = source._firstName;
+        _lastName = source._lastName;
+        _birthDate = source._birthDate;
+        _education = source._education;
+        _groupNumber = source._groupNumber;
+        _tests = source._tests.Select(test => (Test)test.DeepCopy()).ToList();
+        _exams = source._exams.Select(exam => (Exam)exam.DeepCopy()).ToList();
+    }
+
+    private static JsonSerializerOptions GetSerializerOptions()
+    {
+        return new JsonSerializerOptions
+        {
+            WriteIndented = true
+        };
+    }
+
+    private StudentSerializationData CreateState()
+    {
+        return new StudentSerializationData
+        {
+            FirstName = _firstName,
+            LastName = _lastName,
+            BirthDate = _birthDate,
+            EducationForm = _education,
+            GroupNumber = _groupNumber,
+            Tests = _tests.Select(test => (Test)test.DeepCopy()).ToList(),
+            Exams = _exams.Select(exam => (Exam)exam.DeepCopy()).ToList()
+        };
+    }
+
+    private static Student CreateFromState(StudentSerializationData state)
+    {
+        var student = new Student(
+            new Person(state.FirstName, state.LastName, state.BirthDate),
+            state.EducationForm,
+            state.GroupNumber
+        );
+
+        student._tests = state.Tests?.Select(test => (Test)test.DeepCopy()).ToList() ?? new List<Test>();
+        student._exams = state.Exams?.Select(exam => (Exam)exam.DeepCopy()).ToList() ?? new List<Exam>();
+        return student;
+    }
+
+    private class StudentSerializationData
+    {
+        public string FirstName { get; init; } = string.Empty;
+
+        public string LastName { get; init; } = string.Empty;
+
+        public DateTime BirthDate { get; init; }
+
+        public Education EducationForm { get; init; }
+
+        public int GroupNumber { get; init; }
+
+        public List<Test>? Tests { get; init; }
+
+        public List<Exam>? Exams { get; init; }
     }
 }
 
@@ -1157,102 +1330,58 @@ public static class Program
     {
         Console.OutputEncoding = Encoding.UTF8;
 
-        var firstCollection = new StudentCollection("Перша колекція");
-        var secondCollection = new StudentCollection("Друга колекція");
-
-        var firstJournal = new Journal();
-        var secondJournal = new Journal();
-
-        firstCollection.StudentCountChanged += firstJournal.OnStudentCountChanged;
-        firstCollection.StudentReferenceChanged += firstJournal.OnStudentReferenceChanged;
-
-        firstCollection.StudentCountChanged += secondJournal.OnStudentCountChanged;
-        firstCollection.StudentReferenceChanged += secondJournal.OnStudentReferenceChanged;
-        secondCollection.StudentCountChanged += secondJournal.OnStudentCountChanged;
-        secondCollection.StudentReferenceChanged += secondJournal.OnStudentReferenceChanged;
-
-        firstCollection.AddDefaults();
-        secondCollection.AddStudents(
-            CreateCustomStudent(
-                "Олена",
-                "Кравець",
-                new DateTime(2004, 5, 14),
-                Education.Master,
-                321,
-                new[] { new Test("Бази даних", true), new Test("Комп'ютерні мережі", true) },
-                new[]
-                {
-                    new Exam("Бази даних", 5, new DateTime(2025, 1, 17)),
-                    new Exam("Комп'ютерні мережі", 4, new DateTime(2025, 1, 20))
-                }
-            ),
-            CreateCustomStudent(
-                "Іван",
-                "Мельник",
-                new DateTime(2003, 11, 3),
-                Education.Bachelor,
-                215,
-                new[] { new Test("Алгоритми", true), new Test("Дискретна математика", false) },
-                new[]
-                {
-                    new Exam("Алгоритми", 3, new DateTime(2025, 1, 18)),
-                    new Exam("Дискретна математика", 2, new DateTime(2025, 1, 21))
-                }
-            )
-        );
-
-        firstCollection.AddStudents(
-            CreateCustomStudent(
-                "Марія",
-                "Бондар",
-                new DateTime(2002, 9, 9),
-                Education.SecondEducation,
-                410,
-                new[] { new Test("Менеджмент", true) },
-                new[] { new Exam("Менеджмент", 5, new DateTime(2025, 2, 5)) }
-            )
-        );
-
-        secondCollection.AddDefaults();
-
-        firstCollection.Remove(1);
-        secondCollection.Remove(0);
-
-        firstCollection[0] = CreateCustomStudent(
-            "Андрій",
-            "Шевчук",
-            new DateTime(2001, 4, 7),
+        var student = CreateCustomStudent(
+            "Олена",
+            "Кравець",
+            new DateTime(2004, 5, 14),
             Education.Master,
-            305,
-            new[] { new Test("Архітектура ПЗ", true) },
-            new[] { new Exam("Архітектура ПЗ", 5, new DateTime(2025, 3, 10)) }
+            321,
+            new[] { new Test("Бази даних", true), new Test("Комп'ютерні мережі", true) },
+            new[]
+            {
+                new Exam("Бази даних", 5, new DateTime(2025, 1, 17)),
+                new Exam("Комп'ютерні мережі", 4, new DateTime(2025, 1, 20))
+            }
         );
 
-        var replacementStudent = CreateCustomStudent(
-            "Наталія",
-            "Гуменюк",
-            new DateTime(2003, 6, 22),
-            Education.Bachelor,
-            222,
-            new[] { new Test("Операційні системи", true) },
-            new[] { new Exam("Операційні системи", 4, new DateTime(2025, 3, 12)) }
-        );
-        secondCollection[1] = replacementStudent;
-
-        Console.WriteLine("=== Перша колекція студентів ===");
-        Console.WriteLine(firstCollection);
+        Console.WriteLine("=== Початковий об'єкт Student ===");
+        Console.WriteLine(student);
         Console.WriteLine();
 
-        Console.WriteLine("=== Друга колекція студентів ===");
-        Console.WriteLine(secondCollection);
+        var copiedStudent = student.DeepCopy();
+        student.AddExams(new Exam("Алгоритми", 3, new DateTime(2025, 2, 10)));
+
+        Console.WriteLine("=== Оригінал після зміни ===");
+        Console.WriteLine(student);
         Console.WriteLine();
 
-        Console.WriteLine("=== Journal 1 ===");
-        Console.WriteLine(firstJournal);
+        Console.WriteLine("=== DeepCopy об'єкта Student ===");
+        Console.WriteLine(copiedStudent);
         Console.WriteLine();
 
-        Console.WriteLine("=== Journal 2 ===");
-        Console.WriteLine(secondJournal);
+        const string firstFileName = "student.json";
+        const string secondFileName = "student-static.json";
+
+        Console.WriteLine($"Збереження у файл {firstFileName}: {student.Save(firstFileName)}");
+
+        var loadedStudent = new Student();
+        Console.WriteLine($"Завантаження з файлу {firstFileName}: {loadedStudent.Load(firstFileName)}");
+        Console.WriteLine("=== Об'єкт після Load ===");
+        Console.WriteLine(loadedStudent);
+        Console.WriteLine();
+
+        Console.WriteLine($"Статичне збереження у файл {secondFileName}: {Student.Save(secondFileName, copiedStudent)}");
+        var staticLoadedStudent = new Student();
+        Console.WriteLine($"Статичне завантаження з файлу {secondFileName}: {Student.Load(secondFileName, staticLoadedStudent)}");
+        Console.WriteLine("=== Об'єкт після static Load ===");
+        Console.WriteLine(staticLoadedStudent);
+        Console.WriteLine();
+
+        Console.WriteLine("=== Додавання іспиту через консоль ===");
+        var addResult = student.AddFromConsole();
+        Console.WriteLine($"Результат AddFromConsole: {addResult}");
+        Console.WriteLine("=== Student після AddFromConsole ===");
+        Console.WriteLine(student);
         Console.WriteLine();
     }
 
