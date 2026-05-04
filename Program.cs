@@ -1,439 +1,310 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
+using System.Diagnostics;
+using System.Globalization;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Threading.Tasks.Dataflow;
 
-namespace Lab7Variant;
+namespace Lab8Variant1;
 
-public interface IHasName
+public readonly record struct MatrixPosition(int Row, int Column);
+
+public readonly record struct MatrixCellResult(int Row, int Column, double Value);
+
+public sealed class Matrix
 {
-    string Name { get; }
-}
+    private readonly double[,] _data;
 
-public enum Gender
-{
-    Male,
-    Female
-}
-
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-public sealed class CoupleAttribute : Attribute
-{
-    public string Pair { get; init; } = string.Empty;
-
-    public double Probability { get; init; }
-
-    public string ChildType { get; init; } = string.Empty;
-}
-
-public sealed class SameGenderCoupleException : Exception
-{
-    public SameGenderCoupleException(string message)
-        : base(message)
+    public Matrix(int rows, int columns)
     {
-    }
-}
-
-public abstract class Human : IHasName
-{
-    protected Human(string name, Gender gender)
-    {
-        Name = name;
-        Gender = gender;
-    }
-
-    public string Name { get; set; }
-
-    public Gender Gender { get; }
-
-    public override string ToString()
-    {
-        return $"{GetType().Name}: {Name}";
-    }
-}
-
-[Couple(Pair = nameof(Girl), Probability = 0.70, ChildType = nameof(Girl))]
-[Couple(Pair = nameof(PrettyGirl), Probability = 1.00, ChildType = nameof(PrettyGirl))]
-[Couple(Pair = nameof(SmartGirl), Probability = 0.50, ChildType = nameof(Girl))]
-public sealed class Student : Human
-{
-    public Student(string name)
-        : base(name, Gender.Male)
-    {
-    }
-}
-
-[Couple(Pair = nameof(Girl), Probability = 0.70, ChildType = nameof(SmartGirl))]
-[Couple(Pair = nameof(PrettyGirl), Probability = 1.00, ChildType = nameof(PrettyGirl))]
-[Couple(Pair = nameof(SmartGirl), Probability = 0.80, ChildType = nameof(Book))]
-public sealed class Botan : Human
-{
-    public Botan(string name)
-        : base(name, Gender.Male)
-    {
-    }
-}
-
-[Couple(Pair = nameof(Student), Probability = 0.70, ChildType = nameof(Girl))]
-[Couple(Pair = nameof(Botan), Probability = 0.30, ChildType = nameof(SmartGirl))]
-public class Girl : Human
-{
-    public Girl()
-        : this("Безіменна")
-    {
-    }
-
-    public Girl(string name)
-        : base(name, Gender.Female)
-    {
-    }
-
-    public string Patronymic { get; set; } = string.Empty;
-
-    public string DreamChildName()
-    {
-        return "Софія";
-    }
-}
-
-[Couple(Pair = nameof(Student), Probability = 0.40, ChildType = nameof(PrettyGirl))]
-[Couple(Pair = nameof(Botan), Probability = 0.10, ChildType = nameof(PrettyGirl))]
-public sealed class PrettyGirl : Human
-{
-    public PrettyGirl()
-        : this("Безіменна")
-    {
-    }
-
-    public PrettyGirl(string name)
-        : base(name, Gender.Female)
-    {
-    }
-
-    public string Patronymic { get; set; } = string.Empty;
-
-    public string PreferredName(string prefix)
-    {
-        return $"{prefix}Лада";
-    }
-
-    public string DreamChildName()
-    {
-        return "Лада";
-    }
-}
-
-[Couple(Pair = nameof(Student), Probability = 0.20, ChildType = nameof(Girl))]
-[Couple(Pair = nameof(Botan), Probability = 0.50, ChildType = nameof(Book))]
-public sealed class SmartGirl : Human
-{
-    public SmartGirl()
-        : this("Безіменна")
-    {
-    }
-
-    public SmartGirl(string name)
-        : base(name, Gender.Female)
-    {
-    }
-
-    public string Patronymic { get; set; } = string.Empty;
-
-    public string DreamChildName()
-    {
-        return "Марта";
-    }
-}
-
-public sealed class Book : IHasName
-{
-    public string Name { get; set; } = "Без назви";
-}
-
-public sealed record MeetingTrace(
-    Human First,
-    Human Second,
-    bool FirstLikes,
-    bool SecondLikes,
-    string FirstMessage,
-    string SecondMessage,
-    string ChildTypeName);
-
-public static class CoupleService
-{
-    private static readonly Assembly CurrentAssembly = Assembly.GetExecutingAssembly();
-    private static Random _random = new();
-
-    public static MeetingTrace? LastMeetingTrace { get; private set; }
-
-    public static void SetRandom(Random random)
-    {
-        _random = random;
-    }
-
-    public static IHasName? Couple(Human first, Human second)
-    {
-        if (first.Gender == second.Gender)
+        if (rows <= 0)
         {
-            throw new SameGenderCoupleException(
-                $"Неможлива зустріч: {first.Name} і {second.Name} мають однакову стать."
-            );
+            throw new ArgumentOutOfRangeException(nameof(rows), "Кількість рядків повинна бути додатною.");
         }
 
-        var firstRule = FindCoupleRule(first.GetType(), second.GetType());
-        var secondRule = FindCoupleRule(second.GetType(), first.GetType());
-
-        var firstLikes = firstRule is not null && GetRandomAnswer(firstRule.Probability);
-        var secondLikes = secondRule is not null && GetRandomAnswer(secondRule.Probability);
-
-        LastMeetingTrace = new MeetingTrace(
-            first,
-            second,
-            firstLikes,
-            secondLikes,
-            BuildOpinionMessage(first, second, firstLikes, firstRule?.Probability ?? 0),
-            BuildOpinionMessage(second, first, secondLikes, secondRule?.Probability ?? 0),
-            firstRule?.ChildType ?? "Немає"
-        );
-
-        if (!firstLikes || !secondLikes || firstRule is null)
+        if (columns <= 0)
         {
-            return null;
+            throw new ArgumentOutOfRangeException(nameof(columns), "Кількість стовпців повинна бути додатною.");
         }
 
-        var childName = ResolveChildName(second) ?? "Таємниче ім'я";
-        var child = CreateChild(firstRule.ChildType, childName);
-        SetPatronymicIfExists(child, first, second);
-        return child;
+        _data = new double[rows, columns];
     }
 
-    public static bool GetRandomAnswer(double probability)
-    {
-        return _random.NextDouble() <= probability;
-    }
+    public int Rows => _data.GetLength(0);
 
-    public static string GetObjectTypeName(IHasName? value)
-    {
-        return value?.GetType().Name ?? "Ніхто";
-    }
+    public int Columns => _data.GetLength(1);
 
-    public static string GetObjectName(IHasName? value)
+    public double this[int row, int column]
     {
-        return value?.Name ?? "Немає";
+        get => _data[row, column];
+        set => _data[row, column] = value;
     }
+}
 
-    private static CoupleAttribute? FindCoupleRule(Type sourceType, Type pairType)
+public static class MatrixGenerator
+{
+    public static Matrix Generate(int rows, int columns, int minValue = 0, int maxValue = 10)
     {
-        foreach (var attribute in EnumerateCoupleAttributes(sourceType))
+        var matrix = new Matrix(rows, columns);
+        var random = Random.Shared;
+
+        for (int row = 0; row < rows; row++)
         {
-            if (string.Equals(attribute.Pair, pairType.Name, StringComparison.Ordinal))
+            for (int column = 0; column < columns; column++)
             {
-                return attribute;
+                matrix[row, column] = random.Next(minValue, maxValue);
             }
         }
 
-        return null;
+        return matrix;
     }
+}
 
-    private static IEnumerable<CoupleAttribute> EnumerateCoupleAttributes(Type type)
+public static class MatrixPrinter
+{
+    public static void PrintIfSmall(string title, Matrix matrix, int maxRows = 8, int maxColumns = 8)
     {
-        foreach (var attribute in type.GetCustomAttributes<CoupleAttribute>())
+        Console.WriteLine(title);
+
+        if (matrix.Rows > maxRows || matrix.Columns > maxColumns)
         {
-            yield return attribute;
-        }
-    }
-
-    private static string? ResolveChildName(Human second)
-    {
-        var stringMethods = second
-            .GetType()
-            .GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
-            .Where(method => method.ReturnType == typeof(string) && !method.IsSpecialName);
-
-        foreach (var method in stringMethods)
-        {
-            try
-            {
-                return method.Invoke(second, null) as string;
-            }
-            catch (TargetParameterCountException)
-            {
-            }
-            catch (TargetInvocationException)
-            {
-            }
-        }
-
-        return second.Name;
-    }
-
-    private static IHasName CreateChild(string childTypeName, string childName)
-    {
-        var childType = CurrentAssembly
-            .GetTypes()
-            .FirstOrDefault(type => string.Equals(type.Name, childTypeName, StringComparison.Ordinal));
-
-        if (childType is null)
-        {
-            throw new InvalidOperationException($"Не вдалося знайти тип дитини '{childTypeName}'.");
-        }
-
-        var child = Activator.CreateInstance(childType)
-            ?? throw new InvalidOperationException($"Не вдалося створити тип '{childTypeName}'.");
-
-        var nameProperty = childType.GetProperty(nameof(IHasName.Name));
-        if (nameProperty?.CanWrite == true)
-        {
-            nameProperty.SetValue(child, childName);
-        }
-
-        return (IHasName)child;
-    }
-
-    private static void SetPatronymicIfExists(IHasName child, Human first, Human second)
-    {
-        var patronymicProperty = child.GetType().GetProperty("Patronymic");
-        if (patronymicProperty?.CanWrite != true)
-        {
+            Console.WriteLine($"Матриця {matrix.Rows}x{matrix.Columns} завелика для повного виводу.");
+            Console.WriteLine();
             return;
         }
 
-        var father = first.Gender == Gender.Male ? first : second;
-        var childHuman = child as Human;
-        var suffix = childHuman?.Gender == Gender.Male ? "ович" : "овна";
-        patronymicProperty.SetValue(child, $"{father.Name}{suffix}");
+        for (int row = 0; row < matrix.Rows; row++)
+        {
+            for (int column = 0; column < matrix.Columns; column++)
+            {
+                Console.Write($"{matrix[row, column],8:F0}");
+            }
+
+            Console.WriteLine();
+        }
+
+        Console.WriteLine();
+    }
+}
+
+public static class MatrixMultiplier
+{
+    public static async Task<Matrix> MultiplyAsync(
+        Matrix left,
+        Matrix right,
+        CancellationToken cancellationToken)
+    {
+        if (left.Columns != right.Rows)
+        {
+            throw new InvalidOperationException(
+                $"Неможливо перемножити матриці {left.Rows}x{left.Columns} та {right.Rows}x{right.Columns}."
+            );
+        }
+
+        var result = new Matrix(left.Rows, right.Columns);
+        var linkOptions = new DataflowLinkOptions { PropagateCompletion = true };
+        var executionOptions = new ExecutionDataflowBlockOptions
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = Environment.ProcessorCount,
+            BoundedCapacity = Environment.ProcessorCount * 4,
+            EnsureOrdered = false
+        };
+
+        var writeOptions = new ExecutionDataflowBlockOptions
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = 1,
+            BoundedCapacity = Environment.ProcessorCount * 4,
+            EnsureOrdered = false
+        };
+
+        var computeCellBlock = new TransformBlock<MatrixPosition, MatrixCellResult>(
+            position => ComputeCell(left, right, position, cancellationToken),
+            executionOptions
+        );
+
+        var writeCellBlock = new ActionBlock<MatrixCellResult>(
+            cell =>
+            {
+                result[cell.Row, cell.Column] = cell.Value;
+            },
+            writeOptions
+        );
+
+        computeCellBlock.LinkTo(writeCellBlock, linkOptions);
+
+        try
+        {
+            for (int row = 0; row < left.Rows; row++)
+            {
+                for (int column = 0; column < right.Columns; column++)
+                {
+                    await computeCellBlock.SendAsync(new MatrixPosition(row, column), cancellationToken);
+                }
+            }
+
+            computeCellBlock.Complete();
+            await writeCellBlock.Completion;
+            return result;
+        }
+        catch
+        {
+            computeCellBlock.Complete();
+            throw;
+        }
     }
 
-    private static string BuildOpinionMessage(Human source, Human target, bool likes, double probability)
+    private static MatrixCellResult ComputeCell(
+        Matrix left,
+        Matrix right,
+        MatrixPosition position,
+        CancellationToken cancellationToken)
     {
-        var percent = probability * 100;
-        return $"{source.GetType().Name} {source.Name} -> {target.GetType().Name} {target.Name}: {(likes ? "подобається" : "не подобається")} ({percent:0}%)";
+        double sum = 0;
+
+        for (int index = 0; index < left.Columns; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            sum += left[position.Row, index] * right[index, position.Column];
+        }
+
+        return new MatrixCellResult(position.Row, position.Column, sum);
     }
 }
 
 public static class Program
 {
-    private static Random _random = Random.Shared;
-
-    public static void Main(string[] args)
+    public static async Task Main()
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-
-        if (DateTime.Today.DayOfWeek == DayOfWeek.Sunday)
-        {
-            WriteColoredLine("Сьогодні неділя. Консоль лабораторної роботи 7 не працює.", ConsoleColor.Red);
-            return;
-        }
-
-        _random = CreateRandom(args);
-        CoupleService.SetRandom(_random);
-        var people = CreatePeoplePool();
-
-        WriteColoredLine("Лабораторна робота 7", ConsoleColor.Cyan);
-        WriteColoredLine("Enter: показати дві випадкові пари | Q/q або F10: вихід", ConsoleColor.DarkCyan);
-        WriteColoredLine("Для повторюваного тесту можна запустити з параметром --seed=42", ConsoleColor.DarkGray);
-        Console.WriteLine();
-
-        PrintTwoPairs(people);
+        PrintIntro();
 
         while (true)
         {
-            var key = Console.ReadKey(true);
-            if (key.Key == ConsoleKey.F10 || key.Key == ConsoleKey.Q)
-            {
-                break;
-            }
+            var leftRows = ReadPositiveInt("Введіть кількість рядків першої матриці: ");
+            var leftColumns = ReadPositiveInt("Введіть кількість стовпців першої матриці: ");
+            var rightRows = ReadPositiveInt("Введіть кількість рядків другої матриці: ");
+            var rightColumns = ReadPositiveInt("Введіть кількість стовпців другої матриці: ");
 
-            if (key.Key == ConsoleKey.Enter)
+            if (leftColumns != rightRows)
             {
+                WriteColoredLine(
+                    $"Помилка: матриці {leftRows}x{leftColumns} і {rightRows}x{rightColumns} не можна перемножити.",
+                    ConsoleColor.Red
+                );
+
+                if (!AskRepeat())
+                {
+                    return;
+                }
+
                 Console.WriteLine();
-                PrintTwoPairs(people);
+                continue;
             }
-        }
-    }
 
-    private static void PrintTwoPairs(IReadOnlyList<Human> people)
-    {
-        for (int pairIndex = 1; pairIndex <= 2; pairIndex++)
-        {
-            var first = RandomHuman(people);
-            var second = RandomHuman(people);
+            WriteColoredLine("Генерація матриць...", ConsoleColor.Cyan);
+            var leftMatrix = MatrixGenerator.Generate(leftRows, leftColumns);
+            var rightMatrix = MatrixGenerator.Generate(rightRows, rightColumns);
 
-            WriteColoredLine($"Пара {pairIndex}: {first} + {second}", ConsoleColor.Yellow);
+            MatrixPrinter.PrintIfSmall("Перша матриця:", leftMatrix);
+            MatrixPrinter.PrintIfSmall("Друга матриця:", rightMatrix);
+
+            using var cts = new CancellationTokenSource();
+            Console.CancelKeyPress += OnCancelKeyPress;
+
+            var cancelWatcher = Task.Run(() => WatchForQuitKey(cts), CancellationToken.None);
+            var stopwatch = Stopwatch.StartNew();
 
             try
             {
-                var child = CoupleService.Couple(first, second);
-                PrintTrace(CoupleService.LastMeetingTrace);
-                WriteColoredLine($"Результат тип: {CoupleService.GetObjectTypeName(child)}", ConsoleColor.Green);
-                WriteColoredLine($"Результат ім'я: {CoupleService.GetObjectName(child)}", ConsoleColor.Green);
+                WriteColoredLine("Почалося множення. Натисніть Q для скасування або Ctrl+C.", ConsoleColor.Yellow);
+                var result = await MatrixMultiplier.MultiplyAsync(leftMatrix, rightMatrix, cts.Token);
+                stopwatch.Stop();
 
-                if (child is not null)
-                {
-                    var patronymic = child.GetType().GetProperty("Patronymic")?.GetValue(child) as string;
-                    if (!string.IsNullOrWhiteSpace(patronymic))
-                    {
-                        WriteColoredLine($"По батькові: {patronymic}", ConsoleColor.DarkGreen);
-                    }
-                }
+                WriteColoredLine(
+                    $"Множення завершено успішно за {stopwatch.Elapsed.TotalMilliseconds:F2} мс.",
+                    ConsoleColor.Green
+                );
+                MatrixPrinter.PrintIfSmall("Результуюча матриця:", result);
             }
-            catch (SameGenderCoupleException ex)
+            catch (OperationCanceledException)
             {
-                WriteColoredLine(ex.Message, ConsoleColor.Red);
+                stopwatch.Stop();
+                WriteColoredLine("Операцію множення скасовано користувачем.", ConsoleColor.Red);
             }
-            catch (Exception ex)
+            finally
             {
-                WriteColoredLine($"Помилка: {ex.Message}", ConsoleColor.Red);
+                cts.Cancel();
+                await cancelWatcher;
+                Console.CancelKeyPress -= OnCancelKeyPress;
             }
 
-            Console.WriteLine(new string('-', 70));
+            if (!AskRepeat())
+            {
+                return;
+            }
+
+            Console.WriteLine();
+
+            void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs args)
+            {
+                args.Cancel = true;
+                cts.Cancel();
+            }
         }
     }
 
-    private static void PrintTrace(MeetingTrace? trace)
+    private static void WatchForQuitKey(CancellationTokenSource cts)
     {
-        if (trace is null)
+        while (!cts.IsCancellationRequested)
         {
-            return;
+            if (!Console.KeyAvailable)
+            {
+                Thread.Sleep(50);
+                continue;
+            }
+
+            var key = Console.ReadKey(true);
+            if (key.Key == ConsoleKey.Q)
+            {
+                cts.Cancel();
+                return;
+            }
         }
-
-        WriteColoredLine(trace.FirstMessage, trace.FirstLikes ? ConsoleColor.Magenta : ConsoleColor.DarkGray);
-        WriteColoredLine(trace.SecondMessage, trace.SecondLikes ? ConsoleColor.Magenta : ConsoleColor.DarkGray);
-        WriteColoredLine($"Очікуваний тип дитини за правилом першого класу: {trace.ChildTypeName}", ConsoleColor.Blue);
     }
 
-    private static IReadOnlyList<Human> CreatePeoplePool()
+    private static bool AskRepeat()
     {
-        return new Human[]
+        Console.Write("Повторити обчислення? (Enter = так, Q = вихід): ");
+        var key = Console.ReadKey(true);
+        Console.WriteLine();
+        return key.Key != ConsoleKey.Q;
+    }
+
+    private static int ReadPositiveInt(string prompt)
+    {
+        while (true)
         {
-            new Student("Андрій"),
-            new Student("Олексій"),
-            new Botan("Богдан"),
-            new Botan("Роман"),
-            new Girl("Олена"),
-            new Girl("Марія"),
-            new PrettyGirl("Лада"),
-            new PrettyGirl("Ірина"),
-            new SmartGirl("Марта"),
-            new SmartGirl("Дарина")
-        };
-    }
+            Console.Write(prompt);
+            var input = Console.ReadLine();
 
-    private static Human RandomHuman(IReadOnlyList<Human> people)
-    {
-        return people[_random.Next(people.Count)];
-    }
+            if (int.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value > 0)
+            {
+                return value;
+            }
 
-    private static Random CreateRandom(string[] args)
-    {
-        var seedArgument = args.FirstOrDefault(arg => arg.StartsWith("--seed=", StringComparison.OrdinalIgnoreCase));
-        if (seedArgument is null)
-        {
-            return Random.Shared;
+            WriteColoredLine("Помилка введення. Потрібно ввести додатне ціле число.", ConsoleColor.Red);
         }
+    }
 
-        var seedValue = seedArgument.Split('=', 2)[1];
-        return int.TryParse(seedValue, out var seed) ? new Random(seed) : Random.Shared;
+    private static void PrintIntro()
+    {
+        WriteColoredLine("Лабораторна робота 8. Множення прямокутних матриць через Dataflow.", ConsoleColor.Cyan);
+        WriteColoredLine("Програма генерує дві матриці за заданими розмірами і перемножує їх.", ConsoleColor.DarkCyan);
+        WriteColoredLine("Кожен елемент результату обчислюється як окреме повідомлення Dataflow.", ConsoleColor.DarkCyan);
+        WriteColoredLine("Під час множення можна натиснути Q або Ctrl+C для скасування.", ConsoleColor.DarkCyan);
+        Console.WriteLine();
     }
 
     private static void WriteColoredLine(string text, ConsoleColor color)
